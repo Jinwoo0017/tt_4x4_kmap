@@ -13,24 +13,24 @@ Interactive 4-variable Karnaugh Map (K-Map) simplifier with VGA output. Use the 
 
 ## How to test
 
-Use the control inputs to move the cursor, toggle K-Map cells, and simplify the Boolean expression.
+Use the control inputs or your keyboard to move the cursor, toggle K-Map cells, and simplify the Boolean expression.
 
-0 SIMPLIFY
+[0] SIMPLIFY
 
-1 UP
+[1] UP
 
-2 DOWN
+[2] DOWN
 
-3 LEFT
+[3] LEFT
 
-4 RIGHT
+[4] RIGHT
 
-5 TOGGLE
+[5] TOGGLE
 
-7 RESET
+[7] RESET
 
 VGA Playground: tt_um_vga_4x4_kmap
 
 ## External hardware
 
-List external hardware used in your project (e.g. PMOD, LED display, etc), if any
+VGA FPGA
