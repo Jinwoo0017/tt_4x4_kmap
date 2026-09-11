@@ -9,11 +9,21 @@ You can also include images in this folder and reference them in the markdown. E
 
 ## How it works
 
-Explain how your project works
+Interactive 4-variable Karnaugh Map (K-Map) simplifier with VGA output. Use the controls to move around the K-Map, toggle minterms, and simplify the Boolean expression.
 
 ## How to test
 
-Explain how to use your project
+Use the control inputs to move the cursor, toggle K-Map cells, and simplify the Boolean expression.
+
+0 SIMPLIFY
+1 UP
+2 DOWN
+3 LEFT
+4 RIGHT
+5 TOGGLE
+7 RESET
+
+VGA Playground: tt_um_vga_4x4_kmap
 
 ## External hardware
 
