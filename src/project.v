@@ -34,70 +34,56 @@ module tt_um_vga_4x4_kmap (
     assign uio_out = 8'b0;
     assign uio_oe  = 8'b0;
 
-
     /* =========================================================
-       INPUT CONTROLS
-
-       1 = UP
-       2 = DOWN
-       3 = LEFT
-       4 = RIGHT
-       5 = TOGGLE
-       0 = SIMPLIFY
-       7 = RESET
+       CONTROLS
+       ui_in[0] = SIMPLIFY
+       ui_in[1] = UP
+       ui_in[2] = DOWN
+       ui_in[3] = LEFT
+       ui_in[4] = RIGHT
+       ui_in[5] = TOGGLE
+       ui_in[6] = UNUSED
+       ui_in[7] = RESET
        ========================================================= */
 
+    wire key_simplify = ui_in[0];
     wire key_up       = ui_in[1];
     wire key_down     = ui_in[2];
     wire key_left     = ui_in[3];
     wire key_right    = ui_in[4];
     wire key_toggle   = ui_in[5];
-    wire key_simplify = ui_in[0];
     wire key_reset    = ui_in[7];
 
-
-    /* =========================================================
-       EDGE DETECTION
-       ========================================================= */
-
+    reg prev_simplify;
     reg prev_up;
     reg prev_down;
     reg prev_left;
     reg prev_right;
     reg prev_toggle;
     reg prev_reset;
-    reg prev_simplify;
 
+    wire simplify_press = key_simplify ^ prev_simplify;
     wire up_press       = key_up       ^ prev_up;
     wire down_press     = key_down     ^ prev_down;
     wire left_press     = key_left     ^ prev_left;
     wire right_press    = key_right    ^ prev_right;
     wire toggle_press   = key_toggle   ^ prev_toggle;
     wire reset_press    = key_reset    ^ prev_reset;
-    wire simplify_press = key_simplify ^ prev_simplify;
-
-
-    /* =========================================================
-       K-MAP STATE
-       ========================================================= */
 
     reg [1:0] cursor_row;
     reg [1:0] cursor_col;
     reg [15:0] kmap_value;
     reg simplify_mode;
 
-
     /* =========================================================
-       K-MAP MINTERM FUNCTION
+       GRAY-CODE K-MAP
        ========================================================= */
 
     function [3:0] kmap_minterm;
         input [1:0] r;
         input [1:0] c;
-
         begin
             case ({r,c})
-
                 4'b0000: kmap_minterm = 4'd0;
                 4'b0001: kmap_minterm = 4'd1;
                 4'b0010: kmap_minterm = 4'd3;
@@ -118,26 +104,19 @@ module tt_um_vga_4x4_kmap (
                 4'b1110: kmap_minterm = 4'd11;
                 4'b1111: kmap_minterm = 4'd10;
 
-                default:
-                    kmap_minterm = 4'd0;
-
+                default: kmap_minterm = 4'd0;
             endcase
         end
     endfunction
 
-
     wire [3:0] selected_minterm;
-
-    assign selected_minterm =
-        kmap_minterm(cursor_row,cursor_col);
-
+    assign selected_minterm = kmap_minterm(cursor_row, cursor_col);
 
     /* =========================================================
-       MAIN STATE MACHINE
+       STATE
        ========================================================= */
 
     always @(posedge clk) begin
-
         if (!rst_n) begin
 
             cursor_row <= 2'd0;
@@ -145,24 +124,24 @@ module tt_um_vga_4x4_kmap (
             kmap_value <= 16'b0;
             simplify_mode <= 1'b0;
 
+            prev_simplify <= 1'b0;
             prev_up       <= 1'b0;
             prev_down     <= 1'b0;
             prev_left     <= 1'b0;
             prev_right    <= 1'b0;
             prev_toggle   <= 1'b0;
             prev_reset    <= 1'b0;
-            prev_simplify <= 1'b0;
 
         end
         else begin
 
+            prev_simplify <= key_simplify;
             prev_up       <= key_up;
             prev_down     <= key_down;
             prev_left     <= key_left;
             prev_right    <= key_right;
             prev_toggle   <= key_toggle;
             prev_reset    <= key_reset;
-            prev_simplify <= key_simplify;
 
             if (reset_press) begin
 
@@ -202,24 +181,19 @@ module tt_um_vga_4x4_kmap (
                         cursor_col <= cursor_col + 2'd1;
                 end
 
-                if (toggle_press) begin
-                    kmap_value[selected_minterm]
-                        <= ~kmap_value[selected_minterm];
-                end
+                if (toggle_press)
+                    kmap_value[selected_minterm] <=
+                        ~kmap_value[selected_minterm];
 
-                if (simplify_press) begin
+                if (simplify_press)
                     simplify_mode <= 1'b1;
-                end
 
             end
-
         end
-
     end
 
-
     /* =========================================================
-       K-MAP GEOMETRY
+       DISPLAY GEOMETRY
        ========================================================= */
 
     localparam GRID_X = 90;
@@ -233,24 +207,14 @@ module tt_um_vga_4x4_kmap (
 
     localparam BORDER = 4;
 
-    wire inside_grid;
-
-    assign inside_grid =
+    wire inside_grid =
         (hpos >= GRID_X) &&
         (hpos < GRID_X + GRID_W) &&
         (vpos >= GRID_Y) &&
         (vpos < GRID_Y + GRID_H);
 
-    wire [9:0] rel_x;
-    wire [9:0] rel_y;
-
-    assign rel_x = hpos - GRID_X;
-    assign rel_y = vpos - GRID_Y;
-
-
-    /* =========================================================
-       TILE POSITION
-       ========================================================= */
+    wire [9:0] rel_x = hpos - GRID_X;
+    wire [9:0] rel_y = vpos - GRID_Y;
 
     reg [1:0] tile_col;
     reg [1:0] tile_row;
@@ -277,129 +241,110 @@ module tt_um_vga_4x4_kmap (
 
     end
 
+    wire [3:0] display_minterm =
+        kmap_minterm(tile_row, tile_col);
 
-    wire [3:0] display_minterm;
-
-    assign display_minterm =
-        kmap_minterm(tile_row,tile_col);
-
-    wire display_value;
-
-    assign display_value =
+    wire display_value =
         kmap_value[display_minterm];
 
-
-    /* =========================================================
-       SELECTED TILE
-       ========================================================= */
-
-    wire selected_tile;
-
-    assign selected_tile =
+    wire selected_tile =
         (tile_row == cursor_row) &&
         (tile_col == cursor_col);
 
+    /*
+       Avoid modulo operators.
+       Since each tile has a fixed width/height,
+       these ranges directly generate the local coordinates.
+    */
+
+    reg [9:0] tile_x;
+    reg [9:0] tile_y;
+
+    always @(*) begin
+
+        case (tile_col)
+            2'd0: tile_x = rel_x;
+            2'd1: tile_x = rel_x - 10'd135;
+            2'd2: tile_x = rel_x - 10'd270;
+            default: tile_x = rel_x - 10'd405;
+        endcase
+
+        case (tile_row)
+            2'd0: tile_y = rel_y;
+            2'd1: tile_y = rel_y - 10'd75;
+            2'd2: tile_y = rel_y - 10'd150;
+            default: tile_y = rel_y - 10'd225;
+        endcase
+
+    end
 
     /* =========================================================
-       POSITION INSIDE TILE
+       DIGITS
        ========================================================= */
 
-    wire [9:0] tile_x;
-    wire [9:0] tile_y;
-
-    assign tile_x = rel_x % TILE_W;
-    assign tile_y = rel_y % TILE_H;
-
-
-    /* =========================================================
-       MINTERM DISPLAY
-       ========================================================= */
-
-    wire digit_top;
-    wire digit_bottom;
-    wire digit_left;
-    wire digit_right;
-
-    assign digit_top =
+    wire digit_top =
         (tile_x >= 10'd48) &&
         (tile_x < 10'd87) &&
         (tile_y >= 10'd17) &&
         (tile_y < 10'd24);
 
-    assign digit_bottom =
+    wire digit_bottom =
         (tile_x >= 10'd48) &&
         (tile_x < 10'd87) &&
         (tile_y >= 10'd51) &&
         (tile_y < 10'd58);
 
-    assign digit_left =
+    wire digit_left =
         (tile_x >= 10'd42) &&
         (tile_x < 10'd49) &&
         (tile_y >= 10'd23) &&
         (tile_y < 10'd52);
 
-    assign digit_right =
+    wire digit_right =
         (tile_x >= 10'd86) &&
         (tile_x < 10'd93) &&
         (tile_y >= 10'd23) &&
         (tile_y < 10'd52);
 
-    wire digit_on;
-
-    assign digit_on =
+    wire digit_on =
         display_value ?
-            digit_right :
-            (digit_top |
-             digit_bottom |
-             digit_left |
-             digit_right);
-
+        digit_right :
+        (digit_top |
+         digit_bottom |
+         digit_left |
+         digit_right);
 
     /* =========================================================
-       GROUP CANDIDATE FUNCTIONS
+       K-MAP GROUP MASKS
        ========================================================= */
 
-    /*
-       No unused function argument here.
-       The full 16-cell group is always FFFF.
-    */
     function [15:0] group16;
         begin
             group16 = 16'hFFFF;
         end
     endfunction
 
-
     function [15:0] group8;
         input integer index;
-
         begin
             case (index)
-
                 0: group8 = 16'h00FF;
                 1: group8 = 16'hF0F0;
                 2: group8 = 16'hFF00;
                 3: group8 = 16'h0F0F;
-
                 4: group8 = 16'h3333;
                 5: group8 = 16'hAAAA;
                 6: group8 = 16'hCCCC;
                 7: group8 = 16'h5555;
-
-                default:
-                    group8 = 16'h0000;
-
+                default: group8 = 16'h0000;
             endcase
         end
     endfunction
 
-
     function [15:0] group4;
         input integer index;
-
         begin
             case (index)
-
                 0:  group4 = 16'h000F;
                 1:  group4 = 16'h00F0;
                 2:  group4 = 16'hF000;
@@ -430,17 +375,13 @@ module tt_um_vga_4x4_kmap (
                 22: group4 = 16'h0C0C;
                 23: group4 = 16'h0505;
 
-                default:
-                    group4 = 16'h0000;
-
+                default: group4 = 16'h0000;
             endcase
         end
     endfunction
 
-
     function [15:0] group2;
         input integer index;
-
         begin
             case (index)
 
@@ -484,20 +425,16 @@ module tt_um_vga_4x4_kmap (
                 30: group2 = 16'h0808;
                 31: group2 = 16'h0404;
 
-                default:
-                    group2 = 16'h0000;
+                default: group2 = 16'h0000;
 
             endcase
         end
     endfunction
 
-
     function [15:0] group1;
         input integer index;
-
         begin
             case (index)
-
                 0:  group1 = 16'h0001;
                 1:  group1 = 16'h0002;
                 2:  group1 = 16'h0008;
@@ -518,45 +455,31 @@ module tt_um_vga_4x4_kmap (
                 14: group1 = 16'h0800;
                 15: group1 = 16'h0400;
 
-                default:
-                    group1 = 16'h0000;
-
+                default: group1 = 16'h0000;
             endcase
         end
     endfunction
 
-
-    /* =========================================================
-       GROUP COLORS
-       ========================================================= */
-
     function [2:0] group_color;
         input integer index;
-
         begin
             case (index % 6)
-
                 0: group_color = 3'b001;
                 1: group_color = 3'b010;
                 2: group_color = 3'b011;
                 3: group_color = 3'b100;
                 4: group_color = 3'b101;
-                5: group_color = 3'b110;
-
-                default:
-                    group_color = 3'b001;
-
+                default: group_color = 3'b110;
             endcase
         end
     endfunction
 
-
     /* =========================================================
-       SELECTED GROUP STORAGE
+       GROUP SELECTION
        ========================================================= */
 
     reg [15:0] selected_group_mask [0:15];
-    reg [2:0]  selected_group_color [0:15];
+    reg [2:0] selected_group_color [0:15];
 
     reg [4:0] selected_group_count;
     reg [15:0] covered_minterms;
@@ -565,11 +488,10 @@ module tt_um_vga_4x4_kmap (
     integer gi;
     integer gidx;
 
-
     always @(*) begin
 
         for (gi = 0; gi < 16; gi = gi + 1) begin
-            selected_group_mask[gi]  = 16'b0;
+            selected_group_mask[gi] = 16'b0;
             selected_group_color[gi] = 3'b000;
         end
 
@@ -577,57 +499,38 @@ module tt_um_vga_4x4_kmap (
         covered_minterms = 16'b0;
         candidate_mask = 16'b0;
 
-
-        /* =====================================================
-           16-CELL GROUP
-           ===================================================== */
+        /* 16 */
 
         candidate_mask = group16();
 
         if ((kmap_value & candidate_mask) == candidate_mask) begin
-
             if ((candidate_mask & ~covered_minterms) != 16'b0) begin
 
-                if (selected_group_count < 5'd16) begin
+                selected_group_mask[0] = candidate_mask;
+                selected_group_color[0] = group_color(0);
+                selected_group_count = 5'd1;
 
-                    selected_group_mask[selected_group_count[3:0]]
-                        = candidate_mask;
-
-                    selected_group_color[selected_group_count[3:0]]
-                        = group_color({27'd0,selected_group_count});
-
-                    selected_group_count =
-                        selected_group_count + 5'd1;
-
-                    covered_minterms =
-                        covered_minterms | candidate_mask;
-
-                end
-
+                covered_minterms =
+                    covered_minterms | candidate_mask;
             end
-
         end
 
-
-        /* =====================================================
-           8-CELL GROUPS
-           ===================================================== */
+        /* 8 */
 
         for (gidx = 0; gidx < 8; gidx = gidx + 1) begin
 
             candidate_mask = group8(gidx);
 
             if ((kmap_value & candidate_mask) == candidate_mask) begin
-
                 if ((candidate_mask & ~covered_minterms) != 16'b0) begin
 
                     if (selected_group_count < 5'd16) begin
 
-                        selected_group_mask[selected_group_count[3:0]]
-                            = candidate_mask;
+                        selected_group_mask[selected_group_count[3:0]] =
+                            candidate_mask;
 
-                        selected_group_color[selected_group_count[3:0]]
-                            = group_color({27'd0,selected_group_count});
+                        selected_group_color[selected_group_count[3:0]] =
+                            group_color({27'd0, selected_group_count});
 
                         selected_group_count =
                             selected_group_count + 5'd1;
@@ -636,33 +539,26 @@ module tt_um_vga_4x4_kmap (
                             covered_minterms | candidate_mask;
 
                     end
-
                 end
-
             end
-
         end
 
-
-        /* =====================================================
-           4-CELL GROUPS
-           ===================================================== */
+        /* 4 */
 
         for (gidx = 0; gidx < 24; gidx = gidx + 1) begin
 
             candidate_mask = group4(gidx);
 
             if ((kmap_value & candidate_mask) == candidate_mask) begin
-
                 if ((candidate_mask & ~covered_minterms) != 16'b0) begin
 
                     if (selected_group_count < 5'd16) begin
 
-                        selected_group_mask[selected_group_count[3:0]]
-                            = candidate_mask;
+                        selected_group_mask[selected_group_count[3:0]] =
+                            candidate_mask;
 
-                        selected_group_color[selected_group_count[3:0]]
-                            = group_color({27'd0,selected_group_count});
+                        selected_group_color[selected_group_count[3:0]] =
+                            group_color({27'd0, selected_group_count});
 
                         selected_group_count =
                             selected_group_count + 5'd1;
@@ -671,33 +567,26 @@ module tt_um_vga_4x4_kmap (
                             covered_minterms | candidate_mask;
 
                     end
-
                 end
-
             end
-
         end
 
-
-        /* =====================================================
-           2-CELL GROUPS
-           ===================================================== */
+        /* 2 */
 
         for (gidx = 0; gidx < 32; gidx = gidx + 1) begin
 
             candidate_mask = group2(gidx);
 
             if ((kmap_value & candidate_mask) == candidate_mask) begin
-
                 if ((candidate_mask & ~covered_minterms) != 16'b0) begin
 
                     if (selected_group_count < 5'd16) begin
 
-                        selected_group_mask[selected_group_count[3:0]]
-                            = candidate_mask;
+                        selected_group_mask[selected_group_count[3:0]] =
+                            candidate_mask;
 
-                        selected_group_color[selected_group_count[3:0]]
-                            = group_color({27'd0,selected_group_count});
+                        selected_group_color[selected_group_count[3:0]] =
+                            group_color({27'd0, selected_group_count});
 
                         selected_group_count =
                             selected_group_count + 5'd1;
@@ -706,33 +595,26 @@ module tt_um_vga_4x4_kmap (
                             covered_minterms | candidate_mask;
 
                     end
-
                 end
-
             end
-
         end
 
-
-        /* =====================================================
-           1-CELL GROUPS
-           ===================================================== */
+        /* 1 */
 
         for (gidx = 0; gidx < 16; gidx = gidx + 1) begin
 
             candidate_mask = group1(gidx);
 
             if ((kmap_value & candidate_mask) == candidate_mask) begin
-
                 if ((candidate_mask & ~covered_minterms) != 16'b0) begin
 
                     if (selected_group_count < 5'd16) begin
 
-                        selected_group_mask[selected_group_count[3:0]]
-                            = candidate_mask;
+                        selected_group_mask[selected_group_count[3:0]] =
+                            candidate_mask;
 
-                        selected_group_color[selected_group_count[3:0]]
-                            = group_color({27'd0,selected_group_count});
+                        selected_group_color[selected_group_count[3:0]] =
+                            group_color({27'd0, selected_group_count});
 
                         selected_group_count =
                             selected_group_count + 5'd1;
@@ -741,24 +623,13 @@ module tt_um_vga_4x4_kmap (
                             covered_minterms | candidate_mask;
 
                     end
-
                 end
-
             end
-
         end
-
     end
 
-
     /* =========================================================
-       BOOLEAN EXPRESSION GENERATOR
-
-       IMPORTANT:
-       The temporary Boolean variables are given defaults at
-       the beginning of the combinational block. This removes
-       the inferred latches while retaining the original
-       Boolean-expression generation.
+       BOOLEAN OUTPUT
        ========================================================= */
 
     reg [7:0] bool_text [0:127];
@@ -779,18 +650,13 @@ module tt_um_vga_4x4_kmap (
     reg bt_d1;
     reg bt_first_term;
 
-
     always @(*) begin
-
-        /* -----------------------------------------------------
-           Default all outputs/state of this combinational block
-           ----------------------------------------------------- */
 
         for (bt_i = 0; bt_i < 128; bt_i = bt_i + 1)
             bool_text[bt_i] = " ";
 
         bt_pos = 0;
-
+        bool_text_len = 8'd0;
         bt_first_term = 1'b1;
 
         bt_a0 = 1'b0;
@@ -802,13 +668,6 @@ module tt_um_vga_4x4_kmap (
         bt_d0 = 1'b0;
         bt_d1 = 1'b0;
 
-        bool_text_len = 8'd0;
-
-
-        /* -----------------------------------------------------
-           Only generate Boolean expression in simplify mode
-           ----------------------------------------------------- */
-
         if (simplify_mode) begin
 
             bool_text[0] = "F";
@@ -818,35 +677,18 @@ module tt_um_vga_4x4_kmap (
 
             bt_pos = 4;
 
-
-            /* =================================================
-               ALL 16 MINTERMS
-               ================================================= */
-
             if (kmap_value == 16'hFFFF) begin
 
                 bool_text[bt_pos] = "1";
                 bt_pos = bt_pos + 1;
 
             end
-
-
-            /* =================================================
-               NO MINTERMS
-               ================================================= */
-
-            else if (selected_group_count == 5'd0) begin
+            else if (selected_group_count == 0) begin
 
                 bool_text[bt_pos] = "0";
                 bt_pos = bt_pos + 1;
 
             end
-
-
-            /* =================================================
-               SOP EXPRESSION
-               ================================================= */
-
             else begin
 
                 for (bt_g = 0; bt_g < 16; bt_g = bt_g + 1) begin
@@ -854,173 +696,92 @@ module tt_um_vga_4x4_kmap (
                     if (bt_g < selected_group_count) begin
 
                         if (!bt_first_term) begin
-
                             bool_text[bt_pos] = "+";
                             bt_pos = bt_pos + 1;
-
                         end
 
                         bt_first_term = 1'b0;
 
-
-                        /* -------------------------------------------------
-                           Reset variables for this group
-                           ------------------------------------------------- */
-
                         bt_a0 = 1'b0;
                         bt_a1 = 1'b0;
-
                         bt_b0 = 1'b0;
                         bt_b1 = 1'b0;
-
                         bt_c0 = 1'b0;
                         bt_c1 = 1'b0;
-
                         bt_d0 = 1'b0;
                         bt_d1 = 1'b0;
-
-
-                        /* -------------------------------------------------
-                           Determine which variables remain in the group
-                           ------------------------------------------------- */
 
                         for (bt_m = 0; bt_m < 16; bt_m = bt_m + 1) begin
 
                             if (selected_group_mask[bt_g][bt_m]) begin
 
-                                if (bt_m[3] == 1'b0)
-                                    bt_a0 = 1'b1;
-                                else
-                                    bt_a1 = 1'b1;
+                                bt_a0 = bt_a0 | ~bt_m[3];
+                                bt_a1 = bt_a1 |  bt_m[3];
 
-                                if (bt_m[2] == 1'b0)
-                                    bt_b0 = 1'b1;
-                                else
-                                    bt_b1 = 1'b1;
+                                bt_b0 = bt_b0 | ~bt_m[2];
+                                bt_b1 = bt_b1 |  bt_m[2];
 
-                                if (bt_m[1] == 1'b0)
-                                    bt_c0 = 1'b1;
-                                else
-                                    bt_c1 = 1'b1;
+                                bt_c0 = bt_c0 | ~bt_m[1];
+                                bt_c1 = bt_c1 |  bt_m[1];
 
-                                if (bt_m[0] == 1'b0)
-                                    bt_d0 = 1'b1;
-                                else
-                                    bt_d1 = 1'b1;
+                                bt_d0 = bt_d0 | ~bt_m[0];
+                                bt_d1 = bt_d1 |  bt_m[0];
 
                             end
-
                         end
-
-
-                        /* -------------------------------------------------
-                           A
-                           ------------------------------------------------- */
 
                         if (bt_a0 && !bt_a1) begin
-
                             bool_text[bt_pos] = "A";
                             bt_pos = bt_pos + 1;
-
                             bool_text[bt_pos] = "'";
                             bt_pos = bt_pos + 1;
-
                         end
                         else if (bt_a1 && !bt_a0) begin
-
                             bool_text[bt_pos] = "A";
                             bt_pos = bt_pos + 1;
-
                         end
-
-
-                        /* -------------------------------------------------
-                           B
-                           ------------------------------------------------- */
 
                         if (bt_b0 && !bt_b1) begin
-
                             bool_text[bt_pos] = "B";
                             bt_pos = bt_pos + 1;
-
                             bool_text[bt_pos] = "'";
                             bt_pos = bt_pos + 1;
-
                         end
                         else if (bt_b1 && !bt_b0) begin
-
                             bool_text[bt_pos] = "B";
                             bt_pos = bt_pos + 1;
-
                         end
-
-
-                        /* -------------------------------------------------
-                           C
-                           ------------------------------------------------- */
 
                         if (bt_c0 && !bt_c1) begin
-
                             bool_text[bt_pos] = "C";
                             bt_pos = bt_pos + 1;
-
                             bool_text[bt_pos] = "'";
                             bt_pos = bt_pos + 1;
-
                         end
                         else if (bt_c1 && !bt_c0) begin
-
                             bool_text[bt_pos] = "C";
                             bt_pos = bt_pos + 1;
-
                         end
-
-
-                        /* -------------------------------------------------
-                           D
-                           ------------------------------------------------- */
 
                         if (bt_d0 && !bt_d1) begin
-
                             bool_text[bt_pos] = "D";
                             bt_pos = bt_pos + 1;
-
                             bool_text[bt_pos] = "'";
                             bt_pos = bt_pos + 1;
-
                         end
                         else if (bt_d1 && !bt_d0) begin
-
                             bool_text[bt_pos] = "D";
                             bt_pos = bt_pos + 1;
-
                         end
 
                     end
-
                 end
-
             end
-
         end
-
-
-        /* -----------------------------------------------------
-           Preserve actual generated length
-           ----------------------------------------------------- */
 
         bool_text_len = bt_pos[7:0];
 
-
-        /* -----------------------------------------------------
-           Split Boolean text after 53 characters.
-
-           First line:
-             bool_text[0..52]
-
-           Second line:
-             bool_text[64..127]
-           ----------------------------------------------------- */
+        /* Second line */
 
         for (bt_i = 0; bt_i < 64; bt_i = bt_i + 1) begin
 
@@ -1034,204 +795,118 @@ module tt_um_vga_4x4_kmap (
                 bool_text[bt_i] = " ";
 
         end
-
     end
-
 
     /* =========================================================
        GROUP BORDER DETECTION
        ========================================================= */
 
     wire [1:0] top_row =
-        (tile_row == 2'd0) ? 2'd3 : tile_row - 2'd1;
+        (tile_row == 2'd0) ? 2'd3 :
+        tile_row - 2'd1;
 
     wire [1:0] bottom_row =
-        (tile_row == 2'd3) ? 2'd0 : tile_row + 2'd1;
+        (tile_row == 2'd3) ? 2'd0 :
+        tile_row + 2'd1;
 
     wire [1:0] left_col =
-        (tile_col == 2'd0) ? 2'd3 : tile_col - 2'd1;
+        (tile_col == 2'd0) ? 2'd3 :
+        tile_col - 2'd1;
 
     wire [1:0] right_col =
-        (tile_col == 2'd3) ? 2'd0 : tile_col + 2'd1;
-
+        (tile_col == 2'd3) ? 2'd0 :
+        tile_col + 2'd1;
 
     wire [3:0] top_minterm =
-        kmap_minterm(top_row,tile_col);
+        kmap_minterm(top_row, tile_col);
 
     wire [3:0] bottom_minterm =
-        kmap_minterm(bottom_row,tile_col);
+        kmap_minterm(bottom_row, tile_col);
 
     wire [3:0] left_minterm =
-        kmap_minterm(tile_row,left_col);
+        kmap_minterm(tile_row, left_col);
 
     wire [3:0] right_minterm =
-        kmap_minterm(tile_row,right_col);
+        kmap_minterm(tile_row, right_col);
 
+    reg [2:0] top_border_color;
+    reg [2:0] bottom_border_color;
+    reg [2:0] left_border_color;
+    reg [2:0] right_border_color;
 
-    /* =========================================================
-       TWO-COLOR BORDER STORAGE
-       ========================================================= */
-
-    reg [2:0] top_border_color1;
-    reg [2:0] top_border_color2;
-
-    reg [2:0] bottom_border_color1;
-    reg [2:0] bottom_border_color2;
-
-    reg [2:0] left_border_color1;
-    reg [2:0] left_border_color2;
-
-    reg [2:0] right_border_color1;
-    reg [2:0] right_border_color2;
-
-    reg [1:0] top_border_count;
-    reg [1:0] bottom_border_count;
-    reg [1:0] left_border_count;
-    reg [1:0] right_border_count;
+    reg top_found;
+    reg bottom_found;
+    reg left_found;
+    reg right_found;
 
     integer bi;
 
-
     always @(*) begin
 
-        top_border_color1    = 3'b000;
-        top_border_color2    = 3'b000;
+        top_border_color = 3'b000;
+        bottom_border_color = 3'b000;
+        left_border_color = 3'b000;
+        right_border_color = 3'b000;
 
-        bottom_border_color1 = 3'b000;
-        bottom_border_color2 = 3'b000;
-
-        left_border_color1   = 3'b000;
-        left_border_color2   = 3'b000;
-
-        right_border_color1  = 3'b000;
-        right_border_color2  = 3'b000;
-
-        top_border_count    = 2'd0;
-        bottom_border_count = 2'd0;
-        left_border_count   = 2'd0;
-        right_border_count  = 2'd0;
-
+        top_found = 1'b0;
+        bottom_found = 1'b0;
+        left_found = 1'b0;
+        right_found = 1'b0;
 
         for (bi = 0; bi < 16; bi = bi + 1) begin
 
             if (bi < selected_group_count) begin
 
-                /* TOP */
-
-                if (selected_group_mask[bi][display_minterm] &&
+                if (!top_found &&
+                    selected_group_mask[bi][display_minterm] &&
                     !selected_group_mask[bi][top_minterm]) begin
 
-                    if (top_border_count == 2'd0) begin
+                    top_border_color =
+                        selected_group_color[bi];
 
-                        top_border_color1 =
-                            selected_group_color[bi];
-
-                        top_border_count = 2'd1;
-
-                    end
-                    else if ((top_border_count == 2'd1) &&
-                             (selected_group_color[bi] !=
-                              top_border_color1)) begin
-
-                        top_border_color2 =
-                            selected_group_color[bi];
-
-                        top_border_count = 2'd2;
-
-                    end
+                    top_found = 1'b1;
 
                 end
 
-
-                /* BOTTOM */
-
-                if (selected_group_mask[bi][display_minterm] &&
+                if (!bottom_found &&
+                    selected_group_mask[bi][display_minterm] &&
                     !selected_group_mask[bi][bottom_minterm]) begin
 
-                    if (bottom_border_count == 2'd0) begin
+                    bottom_border_color =
+                        selected_group_color[bi];
 
-                        bottom_border_color1 =
-                            selected_group_color[bi];
-
-                        bottom_border_count = 2'd1;
-
-                    end
-                    else if ((bottom_border_count == 2'd1) &&
-                             (selected_group_color[bi] !=
-                              bottom_border_color1)) begin
-
-                        bottom_border_color2 =
-                            selected_group_color[bi];
-
-                        bottom_border_count = 2'd2;
-
-                    end
+                    bottom_found = 1'b1;
 
                 end
 
-
-                /* LEFT */
-
-                if (selected_group_mask[bi][display_minterm] &&
+                if (!left_found &&
+                    selected_group_mask[bi][display_minterm] &&
                     !selected_group_mask[bi][left_minterm]) begin
 
-                    if (left_border_count == 2'd0) begin
+                    left_border_color =
+                        selected_group_color[bi];
 
-                        left_border_color1 =
-                            selected_group_color[bi];
-
-                        left_border_count = 2'd1;
-
-                    end
-                    else if ((left_border_count == 2'd1) &&
-                             (selected_group_color[bi] !=
-                              left_border_color1)) begin
-
-                        left_border_color2 =
-                            selected_group_color[bi];
-
-                        left_border_count = 2'd2;
-
-                    end
+                    left_found = 1'b1;
 
                 end
 
-
-                /* RIGHT */
-
-                if (selected_group_mask[bi][display_minterm] &&
+                if (!right_found &&
+                    selected_group_mask[bi][display_minterm] &&
                     !selected_group_mask[bi][right_minterm]) begin
 
-                    if (right_border_count == 2'd0) begin
+                    right_border_color =
+                        selected_group_color[bi];
 
-                        right_border_color1 =
-                            selected_group_color[bi];
-
-                        right_border_count = 2'd1;
-
-                    end
-                    else if ((right_border_count == 2'd1) &&
-                             (selected_group_color[bi] !=
-                              right_border_color1)) begin
-
-                        right_border_color2 =
-                            selected_group_color[bi];
-
-                        right_border_count = 2'd2;
-
-                    end
+                    right_found = 1'b1;
 
                 end
 
             end
-
         end
-
     end
 
-
     /* =========================================================
-       TEXT SYSTEM
+       TEXT POSITIONS
        ========================================================= */
 
     localparam TEXT_SCALE  = 2;
@@ -1252,26 +927,8 @@ module tt_um_vga_4x4_kmap (
     localparam ROW3_Y = 275;
     localparam ROW4_Y = 350;
 
-    localparam TITLE_Y = 40;
-
     localparam BOOL_Y1 = 416;
     localparam BOOL_Y2 = 430;
-
-    localparam CONTROL_Y1 = 450;
-    localparam CONTROL_Y2 = 466;
-
-    localparam TITLE_CHARS = 28;
-    localparam BOOL_MAX_CHARS = 64;
-
-    localparam CONTROL1_X = 50;
-    localparam CONTROL2_X = 194;
-    localparam CONTROL1_CHARS = 45;
-    localparam CONTROL2_CHARS = 31;
-
-
-    /* =========================================================
-       TEXT REGION DETECTION
-       ========================================================= */
 
     wire inside_col1 =
         (hpos >= COL1_X) &&
@@ -1297,7 +954,6 @@ module tt_um_vga_4x4_kmap (
         (vpos >= COL_TEXT_Y) &&
         (vpos < COL_TEXT_Y + TEXT_CHAR_H);
 
-
     wire inside_row1 =
         (hpos >= ROW_TEXT_X) &&
         (hpos < ROW_TEXT_X + 4 * TEXT_CHAR_W) &&
@@ -1322,67 +978,36 @@ module tt_um_vga_4x4_kmap (
         (vpos >= ROW4_Y) &&
         (vpos < ROW4_Y + TEXT_CHAR_H);
 
-
-    wire inside_title =
-        (hpos >= 158) &&
-        (hpos < 158 + TITLE_CHARS * TEXT_CHAR_W) &&
-        (vpos >= TITLE_Y) &&
-        (vpos < TITLE_Y + TEXT_CHAR_H);
-
-
-    wire [7:0] bool_second_len;
-
-    assign bool_second_len =
+    wire [7:0] bool_second_len =
         (bool_text_len > 8'd53) ?
         (bool_text_len - 8'd53) :
         8'd0;
 
-
-    wire [9:0] bool_start_x;
-
-    assign bool_start_x =
+    wire [9:0] bool_start_x =
         (bool_text_len <= 8'd53) ?
-        (10'd320 - (({2'b00,bool_text_len} * TEXT_CHAR_W) / 32'd2)) :
+        (10'd320 - ((bool_text_len * TEXT_CHAR_W) / 2)) :
         10'd2;
 
-
-    wire [9:0] bool_second_x;
-
-    assign bool_second_x =
-        (bool_second_len != 8'd0) ?
-        (10'd320 - (({2'b00,bool_second_len} * TEXT_CHAR_W) / 32'd2)) :
+    wire [9:0] bool_second_x =
+        (bool_second_len != 0) ?
+        (10'd320 - ((bool_second_len * TEXT_CHAR_W) / 2)) :
         10'd320;
 
-
     wire inside_bool1 =
+        (bool_text_len != 0) &&
         (hpos >= bool_start_x) &&
-        (hpos < bool_start_x + BOOL_MAX_CHARS * TEXT_CHAR_W) &&
+        (hpos < bool_start_x + 53 * TEXT_CHAR_W) &&
         (vpos >= BOOL_Y1) &&
         (vpos < BOOL_Y1 + TEXT_CHAR_H);
 
     wire inside_bool2 =
-        (bool_second_len != 8'd0) &&
+        (bool_second_len != 0) &&
         (hpos >= bool_second_x) &&
-        (hpos < bool_second_x + BOOL_MAX_CHARS * TEXT_CHAR_W) &&
+        (hpos < bool_second_x + 53 * TEXT_CHAR_W) &&
         (vpos >= BOOL_Y2) &&
         (vpos < BOOL_Y2 + TEXT_CHAR_H);
 
-
-    wire inside_control1 =
-        (hpos >= CONTROL1_X) &&
-        (hpos < CONTROL1_X + CONTROL1_CHARS * TEXT_CHAR_W) &&
-        (vpos >= CONTROL_Y1) &&
-        (vpos < CONTROL_Y1 + TEXT_CHAR_H);
-
-    wire inside_control2 =
-        (hpos >= CONTROL2_X) &&
-        (hpos < CONTROL2_X + CONTROL2_CHARS * TEXT_CHAR_W) &&
-        (vpos >= CONTROL_Y2) &&
-        (vpos < CONTROL_Y2 + TEXT_CHAR_H);
-
-
     wire inside_any_text =
-        inside_title |
         inside_col1 |
         inside_col2 |
         inside_col3 |
@@ -1392,14 +1017,7 @@ module tt_um_vga_4x4_kmap (
         inside_row3 |
         inside_row4 |
         inside_bool1 |
-        inside_bool2 |
-        inside_control1 |
-        inside_control2;
-
-
-    /* =========================================================
-       TEXT COORDINATES
-       ========================================================= */
+        inside_bool2;
 
     reg [9:0] text_local_x;
     reg [9:0] text_local_y;
@@ -1409,11 +1027,7 @@ module tt_um_vga_4x4_kmap (
         text_local_x = 10'd0;
         text_local_y = 10'd0;
 
-        if (inside_title) begin
-            text_local_x = hpos - 158;
-            text_local_y = vpos - TITLE_Y;
-        end
-        else if (inside_col1) begin
+        if (inside_col1) begin
             text_local_x = hpos - COL1_X;
             text_local_y = vpos - COL_TEXT_Y;
         end
@@ -1453,327 +1067,105 @@ module tt_um_vga_4x4_kmap (
             text_local_x = hpos - bool_second_x;
             text_local_y = vpos - BOOL_Y2;
         end
-        else if (inside_control1) begin
-            text_local_x = hpos - CONTROL1_X;
-            text_local_y = vpos - CONTROL_Y1;
-        end
-        else if (inside_control2) begin
-            text_local_x = hpos - CONTROL2_X;
-            text_local_y = vpos - CONTROL_Y2;
-        end
 
     end
 
+    wire [9:0] char_pos_wide =
+        text_local_x / TEXT_CHAR_W;
 
-    /*
-       Use wider intermediate signals so Verilator does not
-       report WIDTHTRUNC on division results.
-    */
+    wire [5:0] char_pos =
+        char_pos_wide[5:0];
 
-    wire [9:0] char_pos_wide;
-    wire [9:0] font_y_wide;
+    wire [9:0] font_y_wide =
+        (text_local_y % TEXT_CHAR_H) / TEXT_SCALE;
 
-    assign char_pos_wide =
-        text_local_x / 10'd12;
+    wire [3:0] font_y =
+        font_y_wide[3:0];
 
-    assign font_y_wide =
-        (text_local_y % 10'd14) / 10'd2;
+    wire [6:0] bool_char_index =
+        {1'b0, char_pos};
 
-    wire [6:0] char_pos;
-    wire [3:0] font_y;
-
-    assign char_pos = char_pos_wide[6:0];
-    assign font_y   = font_y_wide[3:0];
-
-
-    /* =========================================================
-       CHARACTER GENERATOR
-       ========================================================= */
+    wire [6:0] bool_char_index2 =
+        7'd64 + {1'b0, char_pos};
 
     reg [7:0] control_char;
-
-    wire [6:0] bool_char_index;
-    wire [6:0] bool_char_index2;
-
-    assign bool_char_index =
-        {1'b0,char_pos};
-
-    assign bool_char_index2 =
-        7'd64 + {1'b0,char_pos};
-
 
     always @(*) begin
 
         control_char = " ";
 
-        if (inside_title) begin
-
+        if (inside_col1) begin
             case (char_pos)
-
-                7'd0:  control_char="4";
-                7'd1:  control_char="X";
-                7'd2:  control_char="4";
-                7'd3:  control_char=" ";
-                7'd4:  control_char="K";
-                7'd5:  control_char="M";
-                7'd6:  control_char="A";
-                7'd7:  control_char="P";
-                7'd8:  control_char=" ";
-                7'd9:  control_char="B";
-                7'd10: control_char="Y";
-                7'd11: control_char=" ";
-                7'd12: control_char="B";
-                7'd13: control_char="A";
-                7'd14: control_char="G";
-                7'd15: control_char="A";
-                7'd16: control_char=" ";
-                7'd17: control_char="&";
-                7'd18: control_char=" ";
-                7'd19: control_char="M";
-                7'd20: control_char="A";
-                7'd21: control_char="C";
-                7'd22: control_char="A";
-                7'd23: control_char="R";
-                7'd24: control_char="A";
-                7'd25: control_char="E";
-                7'd26: control_char="G";
-
-                default:
-                    control_char=" ";
-
+                0: control_char = "C";
+                1: control_char = "'";
+                2: control_char = "D";
+                3: control_char = "'";
+                default: control_char = " ";
             endcase
-
-        end
-        else if (inside_col1) begin
-
-            case (char_pos)
-
-                7'd0: control_char="C";
-                7'd1: control_char="'";
-                7'd2: control_char="D";
-                7'd3: control_char="'";
-
-                default:
-                    control_char=" ";
-
-            endcase
-
         end
         else if (inside_col2) begin
-
             case (char_pos)
-
-                7'd0: control_char="C";
-                7'd1: control_char="'";
-                7'd2: control_char="D";
-
-                default:
-                    control_char=" ";
-
+                0: control_char = "C";
+                1: control_char = "'";
+                2: control_char = "D";
+                default: control_char = " ";
             endcase
-
         end
         else if (inside_col3) begin
-
             case (char_pos)
-
-                7'd0: control_char="C";
-                7'd1: control_char="D";
-
-                default:
-                    control_char=" ";
-
+                0: control_char = "C";
+                1: control_char = "D";
+                default: control_char = " ";
             endcase
-
         end
         else if (inside_col4) begin
-
             case (char_pos)
-
-                7'd0: control_char="C";
-                7'd1: control_char="D";
-                7'd2: control_char="'";
-
-                default:
-                    control_char=" ";
-
+                0: control_char = "C";
+                1: control_char = "D";
+                2: control_char = "'";
+                default: control_char = " ";
             endcase
-
         end
         else if (inside_row1) begin
-
             case (char_pos)
-
-                7'd0: control_char="A";
-                7'd1: control_char="'";
-                7'd2: control_char="B";
-                7'd3: control_char="'";
-
-                default:
-                    control_char=" ";
-
+                0: control_char = "A";
+                1: control_char = "'";
+                2: control_char = "B";
+                3: control_char = "'";
+                default: control_char = " ";
             endcase
-
         end
         else if (inside_row2) begin
-
             case (char_pos)
-
-                7'd0: control_char="A";
-                7'd1: control_char="'";
-                7'd2: control_char="B";
-
-                default:
-                    control_char=" ";
-
+                0: control_char = "A";
+                1: control_char = "'";
+                2: control_char = "B";
+                default: control_char = " ";
             endcase
-
         end
         else if (inside_row3) begin
-
             case (char_pos)
-
-                7'd0: control_char="A";
-                7'd1: control_char="B";
-
-                default:
-                    control_char=" ";
-
+                0: control_char = "A";
+                1: control_char = "B";
+                default: control_char = " ";
             endcase
-
         end
         else if (inside_row4) begin
-
             case (char_pos)
-
-                7'd0: control_char="A";
-                7'd1: control_char="B";
-                7'd2: control_char="'";
-
-                default:
-                    control_char=" ";
-
+                0: control_char = "A";
+                1: control_char = "B";
+                2: control_char = "'";
+                default: control_char = " ";
             endcase
-
         end
         else if (inside_bool1) begin
-
-            control_char =
-                bool_text[bool_char_index];
-
+            control_char = bool_text[bool_char_index];
         end
         else if (inside_bool2) begin
-
-            control_char =
-                bool_text[bool_char_index2];
-
-        end
-        else if (inside_control1) begin
-
-            case (char_pos)
-
-                7'd0:  control_char="[";
-                7'd1:  control_char="1";
-                7'd2:  control_char="]";
-                7'd3:  control_char=" ";
-
-                7'd4:  control_char="U";
-                7'd5:  control_char="P";
-                7'd6:  control_char=" ";
-
-                7'd7:  control_char="[";
-                7'd8:  control_char="2";
-                7'd9:  control_char="]";
-                7'd10: control_char=" ";
-
-                7'd11: control_char="D";
-                7'd12: control_char="O";
-                7'd13: control_char="W";
-                7'd14: control_char="N";
-                7'd15: control_char=" ";
-
-                7'd16: control_char="[";
-                7'd17: control_char="3";
-                7'd18: control_char="]";
-                7'd19: control_char=" ";
-
-                7'd20: control_char="L";
-                7'd21: control_char="E";
-                7'd22: control_char="F";
-                7'd23: control_char="T";
-                7'd24: control_char=" ";
-
-                7'd25: control_char="[";
-                7'd26: control_char="4";
-                7'd27: control_char="]";
-                7'd28: control_char=" ";
-
-                7'd29: control_char="R";
-                7'd30: control_char="I";
-                7'd31: control_char="G";
-                7'd32: control_char="H";
-                7'd33: control_char="T";
-                7'd34: control_char=" ";
-
-                7'd35: control_char="[";
-                7'd36: control_char="5";
-                7'd37: control_char="]";
-                7'd38: control_char=" ";
-
-                7'd39: control_char="T";
-                7'd40: control_char="O";
-                7'd41: control_char="G";
-                7'd42: control_char="G";
-                7'd43: control_char="L";
-                7'd44: control_char="E";
-
-                default:
-                    control_char=" ";
-
-            endcase
-
-        end
-        else if (inside_control2) begin
-
-            case (char_pos)
-
-                7'd0:  control_char="[";
-                7'd1:  control_char="0";
-                7'd2:  control_char="]";
-                7'd3:  control_char=" ";
-
-                7'd4:  control_char="S";
-                7'd5:  control_char="I";
-                7'd6:  control_char="M";
-                7'd7:  control_char="P";
-                7'd8:  control_char="L";
-                7'd9:  control_char="I";
-                7'd10: control_char="F";
-                7'd11: control_char="Y";
-
-                7'd12: control_char=" ";
-
-                7'd13: control_char="[";
-                7'd14: control_char="7";
-                7'd15: control_char="]";
-
-                7'd16: control_char=" ";
-
-                7'd17: control_char="R";
-                7'd18: control_char="E";
-                7'd19: control_char="S";
-                7'd20: control_char="E";
-                7'd21: control_char="T";
-
-                default:
-                    control_char=" ";
-
-            endcase
-
+            control_char = bool_text[bool_char_index2];
         end
 
     end
-
 
     /* =========================================================
        FONT
@@ -1785,502 +1177,123 @@ module tt_um_vga_4x4_kmap (
 
         begin
 
-            font_row = 5'b00000;
-
             case (ch)
 
                 "A": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b11111;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b10001;
-                        default: font_row=5'b00000;
+                    case (y)
+                        0: font_row = 5'b01110;
+                        1: font_row = 5'b10001;
+                        2: font_row = 5'b10001;
+                        3: font_row = 5'b11111;
+                        4: font_row = 5'b10001;
+                        5: font_row = 5'b10001;
+                        6: font_row = 5'b10001;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
                 "B": begin
-                    case(y)
-                        0: font_row=5'b11110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b11110;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b11110;
-                        default: font_row=5'b00000;
+                    case (y)
+                        0: font_row = 5'b11110;
+                        1: font_row = 5'b10001;
+                        2: font_row = 5'b10001;
+                        3: font_row = 5'b11110;
+                        4: font_row = 5'b10001;
+                        5: font_row = 5'b10001;
+                        6: font_row = 5'b11110;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
                 "C": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10000;
-                        3: font_row=5'b10000;
-                        4: font_row=5'b10000;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
+                    case (y)
+                        0: font_row = 5'b01110;
+                        1: font_row = 5'b10001;
+                        2: font_row = 5'b10000;
+                        3: font_row = 5'b10000;
+                        4: font_row = 5'b10000;
+                        5: font_row = 5'b10001;
+                        6: font_row = 5'b01110;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
                 "D": begin
-                    case(y)
-                        0: font_row=5'b11110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b10001;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b11110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "E": begin
-                    case(y)
-                        0: font_row=5'b11111;
-                        1: font_row=5'b10000;
-                        2: font_row=5'b10000;
-                        3: font_row=5'b11110;
-                        4: font_row=5'b10000;
-                        5: font_row=5'b10000;
-                        6: font_row=5'b11111;
-                        default: font_row=5'b00000;
+                    case (y)
+                        0: font_row = 5'b11110;
+                        1: font_row = 5'b10001;
+                        2: font_row = 5'b10001;
+                        3: font_row = 5'b10001;
+                        4: font_row = 5'b10001;
+                        5: font_row = 5'b10001;
+                        6: font_row = 5'b11110;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
                 "F": begin
-                    case(y)
-                        0: font_row=5'b11111;
-                        1: font_row=5'b10000;
-                        2: font_row=5'b10000;
-                        3: font_row=5'b11110;
-                        4: font_row=5'b10000;
-                        5: font_row=5'b10000;
-                        6: font_row=5'b10000;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "G": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10000;
-                        3: font_row=5'b10111;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "H": begin
-                    case(y)
-                        0: font_row=5'b10001;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b11111;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b10001;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "I": begin
-                    case(y)
-                        0: font_row=5'b11111;
-                        1: font_row=5'b00100;
-                        2: font_row=5'b00100;
-                        3: font_row=5'b00100;
-                        4: font_row=5'b00100;
-                        5: font_row=5'b00100;
-                        6: font_row=5'b11111;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "L": begin
-                    case(y)
-                        0: font_row=5'b10000;
-                        1: font_row=5'b10000;
-                        2: font_row=5'b10000;
-                        3: font_row=5'b10000;
-                        4: font_row=5'b10000;
-                        5: font_row=5'b10000;
-                        6: font_row=5'b11111;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "M": begin
-                    case(y)
-                        0: font_row=5'b10001;
-                        1: font_row=5'b11011;
-                        2: font_row=5'b10101;
-                        3: font_row=5'b10101;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b10001;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "N": begin
-                    case(y)
-                        0: font_row=5'b10001;
-                        1: font_row=5'b11001;
-                        2: font_row=5'b10101;
-                        3: font_row=5'b10011;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b10001;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "O": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b10001;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "P": begin
-                    case(y)
-                        0: font_row=5'b11110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b11110;
-                        4: font_row=5'b10000;
-                        5: font_row=5'b10000;
-                        6: font_row=5'b10000;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "R": begin
-                    case(y)
-                        0: font_row=5'b11110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b11110;
-                        4: font_row=5'b10100;
-                        5: font_row=5'b10010;
-                        6: font_row=5'b10001;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "S": begin
-                    case(y)
-                        0: font_row=5'b01111;
-                        1: font_row=5'b10000;
-                        2: font_row=5'b10000;
-                        3: font_row=5'b01110;
-                        4: font_row=5'b00001;
-                        5: font_row=5'b00001;
-                        6: font_row=5'b11110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "T": begin
-                    case(y)
-                        0: font_row=5'b11111;
-                        1: font_row=5'b00100;
-                        2: font_row=5'b00100;
-                        3: font_row=5'b00100;
-                        4: font_row=5'b00100;
-                        5: font_row=5'b00100;
-                        6: font_row=5'b00100;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "U": begin
-                    case(y)
-                        0: font_row=5'b10001;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b10001;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "W": begin
-                    case(y)
-                        0: font_row=5'b10001;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b10101;
-                        4: font_row=5'b10101;
-                        5: font_row=5'b11011;
-                        6: font_row=5'b10001;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "Y": begin
-                    case(y)
-                        0: font_row=5'b10001;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b01010;
-                        3: font_row=5'b00100;
-                        4: font_row=5'b00100;
-                        5: font_row=5'b00100;
-                        6: font_row=5'b00100;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "K": begin
-                    case(y)
-                        0: font_row=5'b10001;
-                        1: font_row=5'b10010;
-                        2: font_row=5'b10100;
-                        3: font_row=5'b11000;
-                        4: font_row=5'b10100;
-                        5: font_row=5'b10010;
-                        6: font_row=5'b10001;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "X": begin
-                    case(y)
-                        0: font_row=5'b10001;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b01010;
-                        3: font_row=5'b00100;
-                        4: font_row=5'b01010;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b10001;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "Z": begin
-                    case(y)
-                        0: font_row=5'b11111;
-                        1: font_row=5'b00001;
-                        2: font_row=5'b00010;
-                        3: font_row=5'b00100;
-                        4: font_row=5'b01000;
-                        5: font_row=5'b10000;
-                        6: font_row=5'b11111;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "&": begin
-                    case(y)
-                        0: font_row=5'b01100;
-                        1: font_row=5'b10010;
-                        2: font_row=5'b10100;
-                        3: font_row=5'b01000;
-                        4: font_row=5'b10101;
-                        5: font_row=5'b10010;
-                        6: font_row=5'b01101;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "0": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10011;
-                        3: font_row=5'b10101;
-                        4: font_row=5'b11001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
+                    case (y)
+                        0: font_row = 5'b11111;
+                        1: font_row = 5'b10000;
+                        2: font_row = 5'b10000;
+                        3: font_row = 5'b11110;
+                        4: font_row = 5'b10000;
+                        5: font_row = 5'b10000;
+                        6: font_row = 5'b10000;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
                 "1": begin
-                    case(y)
-                        0: font_row=5'b00100;
-                        1: font_row=5'b01100;
-                        2: font_row=5'b00100;
-                        3: font_row=5'b00100;
-                        4: font_row=5'b00100;
-                        5: font_row=5'b00100;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
+                    case (y)
+                        0: font_row = 5'b00100;
+                        1: font_row = 5'b01100;
+                        2: font_row = 5'b00100;
+                        3: font_row = 5'b00100;
+                        4: font_row = 5'b00100;
+                        5: font_row = 5'b00100;
+                        6: font_row = 5'b01110;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
-                "2": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b00001;
-                        3: font_row=5'b00010;
-                        4: font_row=5'b00100;
-                        5: font_row=5'b01000;
-                        6: font_row=5'b11111;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "3": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b00001;
-                        3: font_row=5'b00110;
-                        4: font_row=5'b00001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "4": begin
-                    case(y)
-                        0: font_row=5'b00010;
-                        1: font_row=5'b00110;
-                        2: font_row=5'b01010;
-                        3: font_row=5'b10010;
-                        4: font_row=5'b11111;
-                        5: font_row=5'b00010;
-                        6: font_row=5'b00010;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "5": begin
-                    case(y)
-                        0: font_row=5'b11111;
-                        1: font_row=5'b10000;
-                        2: font_row=5'b11110;
-                        3: font_row=5'b00001;
-                        4: font_row=5'b00001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "6": begin
-                    case(y)
-                        0: font_row=5'b00110;
-                        1: font_row=5'b01000;
-                        2: font_row=5'b10000;
-                        3: font_row=5'b11110;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "7": begin
-                    case(y)
-                        0: font_row=5'b11111;
-                        1: font_row=5'b00001;
-                        2: font_row=5'b00010;
-                        3: font_row=5'b00100;
-                        4: font_row=5'b01000;
-                        5: font_row=5'b01000;
-                        6: font_row=5'b01000;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "8": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b01110;
-                        4: font_row=5'b10001;
-                        5: font_row=5'b10001;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "9": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b10001;
-                        2: font_row=5'b10001;
-                        3: font_row=5'b01111;
-                        4: font_row=5'b00001;
-                        5: font_row=5'b00010;
-                        6: font_row=5'b01100;
-                        default: font_row=5'b00000;
+                "0": begin
+                    case (y)
+                        0: font_row = 5'b01110;
+                        1: font_row = 5'b10001;
+                        2: font_row = 5'b10011;
+                        3: font_row = 5'b10101;
+                        4: font_row = 5'b11001;
+                        5: font_row = 5'b10001;
+                        6: font_row = 5'b01110;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
                 "=": begin
-                    case(y)
-                        2: font_row=5'b11111;
-                        4: font_row=5'b11111;
-                        default: font_row=5'b00000;
+                    case (y)
+                        2: font_row = 5'b11111;
+                        4: font_row = 5'b11111;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
                 "+": begin
-                    case(y)
-                        1: font_row=5'b00100;
-                        2: font_row=5'b00100;
-                        3: font_row=5'b11111;
-                        4: font_row=5'b00100;
-                        5: font_row=5'b00100;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "[": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b01000;
-                        2: font_row=5'b01000;
-                        3: font_row=5'b01000;
-                        4: font_row=5'b01000;
-                        5: font_row=5'b01000;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
-                    endcase
-                end
-
-                "]": begin
-                    case(y)
-                        0: font_row=5'b01110;
-                        1: font_row=5'b00010;
-                        2: font_row=5'b00010;
-                        3: font_row=5'b00010;
-                        4: font_row=5'b00010;
-                        5: font_row=5'b00010;
-                        6: font_row=5'b01110;
-                        default: font_row=5'b00000;
+                    case (y)
+                        1: font_row = 5'b00100;
+                        2: font_row = 5'b00100;
+                        3: font_row = 5'b11111;
+                        4: font_row = 5'b00100;
+                        5: font_row = 5'b00100;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
                 "'": begin
-                    case(y)
-                        0: font_row=5'b00100;
-                        1: font_row=5'b00100;
-                        default: font_row=5'b00000;
+                    case (y)
+                        0: font_row = 5'b00100;
+                        1: font_row = 5'b00100;
+                        default: font_row = 5'b00000;
                     endcase
                 end
 
@@ -2288,37 +1301,21 @@ module tt_um_vga_4x4_kmap (
                     font_row = 5'b00000;
 
             endcase
-
         end
     endfunction
 
+    wire [4:0] font_bits =
+        font_row(control_char, font_y);
 
-    wire [4:0] font_bits;
-
-    assign font_bits =
-        font_row(control_char,font_y);
-
-
-    wire font_pixel;
-
-    /*
-       Keep the original 5x7 font geometry, but make the
-       arithmetic explicitly sized for Verilator.
-    */
-
-    wire [9:0] font_x_in_char;
-
-    assign font_x_in_char =
-        text_local_x % 10'd12;
-
-    assign font_pixel =
-        (font_x_in_char < 10'd10) ?
-        font_bits[4 - (font_x_in_char / 10'd2)] :
+    wire font_pixel =
+        ((text_local_x % TEXT_CHAR_W) < 10) ?
+        font_bits[
+            4 - ((text_local_x % TEXT_CHAR_W) / TEXT_SCALE)
+        ] :
         1'b0;
 
-
     /* =========================================================
-       VGA PIXEL OUTPUT
+       RGB
        ========================================================= */
 
     reg red;
@@ -2331,164 +1328,72 @@ module tt_um_vga_4x4_kmap (
         green = 1'b0;
         blue  = 1'b0;
 
-
         if (display_on) begin
 
             if (inside_grid) begin
 
                 if (simplify_mode) begin
 
+                    if ((tile_y < BORDER) &&
+                        (top_border_color != 3'b000)) begin
 
-                    /* =============================================
-                       FULL 16-CELL GROUP
-                       ============================================= */
+                        red   = top_border_color[2];
+                        green = top_border_color[1];
+                        blue  = top_border_color[0];
 
-                    if ((kmap_value == 16'hFFFF) &&
-                        ((rel_x < BORDER) ||
-                         (rel_x >= GRID_W - BORDER) ||
-                         (rel_y < BORDER) ||
-                         (rel_y >= GRID_H - BORDER))) begin
+                    end
+                    else if ((tile_y >= TILE_H - BORDER) &&
+                             (bottom_border_color != 3'b000)) begin
+
+                        red   = bottom_border_color[2];
+                        green = bottom_border_color[1];
+                        blue  = bottom_border_color[0];
+
+                    end
+                    else if ((tile_x < BORDER) &&
+                             (left_border_color != 3'b000)) begin
+
+                        red   = left_border_color[2];
+                        green = left_border_color[1];
+                        blue  = left_border_color[0];
+
+                    end
+                    else if ((tile_x >= TILE_W - BORDER) &&
+                             (right_border_color != 3'b000)) begin
+
+                        red   = right_border_color[2];
+                        green = right_border_color[1];
+                        blue  = right_border_color[0];
+
+                    end
+                    else if (digit_on) begin
 
                         red   = 1'b1;
-                        green = 1'b0;
+                        green = 1'b1;
                         blue  = 1'b1;
 
                     end
 
+                end
+                else begin
 
-                    /* =============================================
-                       TOP BORDER
-                       ============================================= */
+                    if ((tile_x < BORDER) ||
+                        (tile_x >= TILE_W - BORDER) ||
+                        (tile_y < BORDER) ||
+                        (tile_y >= TILE_H - BORDER)) begin
 
-                    else if ((tile_y < BORDER) &&
-                             (top_border_count != 2'd0)) begin
-
-                        if (top_border_count == 2'd1) begin
-
-                            red   = top_border_color1[2];
-                            green = top_border_color1[1];
-                            blue  = top_border_color1[0];
-
-                        end
-                        else if (tile_y < (BORDER / 2)) begin
-
-                            red   = top_border_color1[2];
-                            green = top_border_color1[1];
-                            blue  = top_border_color1[0];
-
+                        if (selected_tile) begin
+                            red   = 1'b1;
+                            green = 1'b1;
+                            blue  = 1'b0;
                         end
                         else begin
-
-                            red   = top_border_color2[2];
-                            green = top_border_color2[1];
-                            blue  = top_border_color2[0];
-
+                            red   = 1'b1;
+                            green = 1'b1;
+                            blue  = 1'b1;
                         end
 
                     end
-
-
-                    /* =============================================
-                       BOTTOM BORDER
-                       ============================================= */
-
-                    else if ((tile_y >= TILE_H - BORDER) &&
-                             (bottom_border_count != 2'd0)) begin
-
-                        if (bottom_border_count == 2'd1) begin
-
-                            red   = bottom_border_color1[2];
-                            green = bottom_border_color1[1];
-                            blue  = bottom_border_color1[0];
-
-                        end
-                        else if (tile_y < TILE_H - (BORDER / 2)) begin
-
-                            red   = bottom_border_color1[2];
-                            green = bottom_border_color1[1];
-                            blue  = bottom_border_color1[0];
-
-                        end
-                        else begin
-
-                            red   = bottom_border_color2[2];
-                            green = bottom_border_color2[1];
-                            blue  = bottom_border_color2[0];
-
-                        end
-
-                    end
-
-
-                    /* =============================================
-                       LEFT BORDER
-                       ============================================= */
-
-                    else if ((tile_x < BORDER) &&
-                             (left_border_count != 2'd0)) begin
-
-                        if (left_border_count == 2'd1) begin
-
-                            red   = left_border_color1[2];
-                            green = left_border_color1[1];
-                            blue  = left_border_color1[0];
-
-                        end
-                        else if (tile_x < (BORDER / 2)) begin
-
-                            red   = left_border_color1[2];
-                            green = left_border_color1[1];
-                            blue  = left_border_color1[0];
-
-                        end
-                        else begin
-
-                            red   = left_border_color2[2];
-                            green = left_border_color2[1];
-                            blue  = left_border_color2[0];
-
-                        end
-
-                    end
-
-
-                    /* =============================================
-                       RIGHT BORDER
-                       ============================================= */
-
-                    else if ((tile_x >= TILE_W - BORDER) &&
-                             (right_border_count != 2'd0)) begin
-
-                        if (right_border_count == 2'd1) begin
-
-                            red   = right_border_color1[2];
-                            green = right_border_color1[1];
-                            blue  = right_border_color1[0];
-
-                        end
-                        else if (tile_x < TILE_W - (BORDER / 2)) begin
-
-                            red   = right_border_color1[2];
-                            green = right_border_color1[1];
-                            blue  = right_border_color1[0];
-
-                        end
-                        else begin
-
-                            red   = right_border_color2[2];
-                            green = right_border_color2[1];
-                            blue  = right_border_color2[0];
-
-                        end
-
-                    end
-
-
-                    /* =============================================
-                       MINTERM DISPLAY
-                       Keep all 0s visible.
-                       ============================================= */
-
                     else if (digit_on) begin
 
                         red   = 1'b1;
@@ -2499,65 +1404,7 @@ module tt_um_vga_4x4_kmap (
 
                 end
 
-
-                /* =============================================
-                   NORMAL K-MAP / SELECTOR VIEW
-                   ============================================= */
-
-                else begin
-
-                    if (selected_tile) begin
-
-                        if ((tile_x < BORDER) ||
-                            (tile_x >= TILE_W - BORDER) ||
-                            (tile_y < BORDER) ||
-                            (tile_y >= TILE_H - BORDER)) begin
-
-                            red   = 1'b1;
-                            green = 1'b1;
-                            blue  = 1'b0;
-
-                        end
-                        else if (digit_on) begin
-
-                            red   = 1'b1;
-                            green = 1'b1;
-                            blue  = 1'b1;
-
-                        end
-
-                    end
-                    else begin
-
-                        if ((tile_x < BORDER) ||
-                            (tile_x >= TILE_W - BORDER) ||
-                            (tile_y < BORDER) ||
-                            (tile_y >= TILE_H - BORDER)) begin
-
-                            red   = 1'b1;
-                            green = 1'b1;
-                            blue  = 1'b1;
-
-                        end
-                        else if (digit_on) begin
-
-                            red   = 1'b1;
-                            green = 1'b1;
-                            blue  = 1'b1;
-
-                        end
-
-                    end
-
-                end
-
             end
-
-
-            /* =============================================
-               TEXT
-               ============================================= */
-
             else if (inside_any_text && font_pixel) begin
 
                 red   = 1'b1;
@@ -2565,14 +1412,11 @@ module tt_um_vga_4x4_kmap (
                 blue  = 1'b1;
 
             end
-
         end
-
     end
 
-
     /* =========================================================
-       OUTPUT PINS
+       TINY TAPEOUT VGA OUTPUT
        ========================================================= */
 
     assign uo_out[7] = hsync;
