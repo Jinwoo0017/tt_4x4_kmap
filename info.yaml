@@ -4,7 +4,7 @@ project:
   title:        "4x4 Kmap VGA"      # Project title
   author:       "Hanz Baga and John Edward Macaraeg"      # Your name
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
-  description:  "An interactive 4×4 Karnaugh Map visualizer on VGA, showcasing real‑time Boolean simplification."      # One line description of what your project does
+  description:  "An interactive 3×3 Tic-Tac-Toe game on VGA, showcasing real-time gameplay, cursor control, turn-based play, and automatic win detection."      # One line description of what your project does
   language:     "Verilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
   clock_hz:     25175000       # Clock frequency in Hz (or 0 if not applicable)
 
